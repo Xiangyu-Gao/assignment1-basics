@@ -98,14 +98,17 @@ def pretokenize(text: str, special_tokens: List[str], drop_special_token: bool=T
     return tokens_list
 
 
-def pretokenize_chunk(text_and_special_tokens: Tuple) -> List[bytes]:
+def pretokenize_chunk(args) -> List[bytes]:
     """
     Pretokenize a chunk of text into bytes, handling special tokens.
     """
-    text = text_and_special_tokens[0]
-    special_tokens = text_and_special_tokens[1]
+    input_path, special_tokens, start, end, drop_special_token = args
+    print(f"Processing bytes from {start} to {end}...")
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
     
-    return pretokenize(text, special_tokens, drop_special_token=True)
+    return pretokenize(chunk, special_tokens, drop_special_token=drop_special_token)
 
 
 def merge(counts: Dict[Tuple[int, int], int], 
@@ -160,7 +163,6 @@ def merge(counts: Dict[Tuple[int, int], int],
                 index_dict[(new_index, new_pretoken[pos + 1])].add(i)
         
         pretokens[i] = new_pretoken
-    
 
 
 def train_bpe(
@@ -192,18 +194,15 @@ def train_bpe(
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, num_processes, "<|endoftext|>".encode("utf-8"))
 
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            chunk_list.append((chunk, special_tokens))
+    # Prepare the chunk list for multiprocessing
+    for start, end in zip(boundaries[:-1], boundaries[1:]):
+        chunk_list.append((input_path, special_tokens, start, end, True))
     
     # Pretokenze the chunks with multiple processes
     pretokens_list = []
     with multiprocessing.Pool(num_processes) as pool:
-        results = pool.map(pretokenize_chunk, chunk_list)
-        pretokens_list.append(results)
-    
-    pretokens = [item for subsublist in pretokens_list for sublist in subsublist for item in sublist]
+        pretokens_list = pool.map(pretokenize_chunk, chunk_list)
+    pretokens = [item for sublist in pretokens_list for item in sublist]
 
     # Merging
     counts = defaultdict(int)   # Store the counts of each pair

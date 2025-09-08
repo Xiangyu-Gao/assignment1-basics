@@ -1,8 +1,11 @@
 import time
 import pickle
-from tests.adapters import run_train_bpe
+import cProfile
 
-if __name__ == "__main__":
+from cs336_basics.BPETokenizer import train_bpe
+
+
+def main():
     input_path = "data/TinyStoriesV2-GPT4-train.txt"
     output_file_name = "tinystory_vocab.pkl"
 
@@ -14,7 +17,7 @@ if __name__ == "__main__":
 
     # Run the BPE training
     print("Starting BPE training...")
-    vocab, merges = run_train_bpe(
+    vocab, merges = train_bpe(
         input_path=input_path,
         vocab_size=10000,
         special_tokens=["<|endoftext|>"],
@@ -29,6 +32,13 @@ if __name__ == "__main__":
 
     print(f"The whole vocab set is: {vocab}")
 
-    print(f"The longest vocab is: {max(vocab, key=len)}")
+    print(f"The longest vocab is: {max(vocab.values(), key=len)}")
+
+
+if __name__ == "__main__":
+    # main()
+    cProfile.run("main()", sort="cumulative")
+
+    
 
     
