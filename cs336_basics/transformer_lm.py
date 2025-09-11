@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 
-from cs336_basics.transformer_block import TransformerBlock
-from cs336_basics.embedding import Embedding
-from cs336_basics.linear import Linear
-from cs336_basics.rmsnorm import RMSNorm
-from cs336_basics.softmax import softmax
+from cs336_basics.modules.transformer_block import TransformerBlock
+from cs336_basics.modules.embedding import Embedding
+from cs336_basics.modules.linear import Linear
+from cs336_basics.modules.rmsnorm import RMSNorm
+from cs336_basics.modules.softmax import softmax
 
 
 class TransformerLM(nn.Module):

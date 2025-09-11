@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 
-
 def cross_entropy_loss(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
     """
     Compute the cross-entropy loss between logits and labels.

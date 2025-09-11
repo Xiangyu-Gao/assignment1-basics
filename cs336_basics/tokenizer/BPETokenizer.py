@@ -2,59 +2,81 @@ import os
 import multiprocessing
 import regex as re
 
-from typing import BinaryIO
 from collections import defaultdict
 from typing import List, Tuple, Dict, Set, Iterable, Iterator
 from collections import Counter
+from tqdm import trange
+from cs336_basics.tokenizer.utils import find_chunk_boundaries
 
 
-def find_chunk_boundaries(
-    file: BinaryIO, 
-    desired_num_chunks: int, 
-    split_special_token: bytes
-) -> list[int]:
+def check_and_convert_special_tokens(
+    special_tokens: List[str] | List[bytes],
+) -> List[bytes]:
     """
-    Chunk the file into parts that can be counted independently.
-    May return fewer chunks if the boundaries end up overlapping.
+    Check if special tokens are in the vocabulary and convert them to bytes.
     """
-    assert isinstance(split_special_token, bytes), (
-        "Must represent special token as a bytestring"
-    )
+    if not all(isinstance(token, bytes) for token in special_tokens):
+        special_tokens_bytes = [
+            token.encode("utf-8") for token in special_tokens if isinstance(token, str)
+        ]
 
-    # Get total file size in bytes
-    file.seek(0, os.SEEK_END)
-    file_size = file.tell()
-    file.seek(0)
+    return special_tokens_bytes
 
-    chunk_size = file_size // desired_num_chunks
 
-    # Initial guesses for chunk boundary locations, uniformly spaced
-    # Chunks start on previous index, don't include last index
-    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
-    chunk_boundaries[-1] = file_size
+def initialize_vocab(special_tokens: List[bytes]) -> Dict[int, bytes]:
+    vocab = {i: bytes([i]) for i in range(256)}  # ASCII characters
+    for i, token in enumerate(special_tokens, start=256):
+        vocab[i] = token
 
-    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
+    return vocab
 
-    for bi in range(1, len(chunk_boundaries) - 1):
-        initial_position = chunk_boundaries[bi]
-        file.seek(initial_position)  # Start at boundary guess
-        while True:
-            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
 
-            # If EOF, this boundary should be at the end of the file
-            if mini_chunk == b"":
-                chunk_boundaries[bi] = file_size
-                break
+def word_to_bytes(word: str) -> List[bytes]:
+    """
+    Convert a word to bytes list.
+    """
+    byte_ids = [bytes([b]) for b in word.encode("utf-8")]
 
-            # Find the special token in the mini chunk
-            found_at = mini_chunk.find(split_special_token)
-            if found_at != -1:
-                chunk_boundaries[bi] = initial_position + found_at
-                break
-            initial_position += mini_chunk_size
+    return byte_ids
 
-    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
-    return sorted(set(chunk_boundaries))
+
+def pair_counts(
+    word_counter: Dict[Tuple[bytes], int],
+) -> Dict[Tuple[bytes, bytes], int]:
+    """
+    Count pairs of bytes in the word counter.
+    """
+    pairs: Dict[Tuple[bytes, bytes], int] = {}
+    for token, freq in word_counter.items():
+        for i in range(len(token) - 1):
+            pair = (token[i], token[i + 1])
+            pairs[pair] = pairs.get(pair, 0) + freq
+
+    return pairs
+
+
+def get_most_frequent_pair(
+    pairs: Dict[Tuple[bytes, bytes], int],
+) -> Tuple[bytes, bytes]:
+    max_freq = max(pairs.values())
+    candidates = [pair for pair, freq in pairs.items() if freq == max_freq]
+    res = max(candidates)
+
+    return res
+
+
+def add_pair_to_vocab(
+    vocab: Dict[int, bytes], pair: Tuple[bytes, bytes], vocab_inv: Dict[bytes, int]
+) -> int:
+    """
+    Add a new pair to the vocabulary.
+    """
+    index = len(vocab)
+    s = vocab[vocab_inv[pair[0]]] + vocab[vocab_inv[pair[1]]]
+    vocab[index] = s
+    vocab_inv[vocab[index]] = index
+
+    return index
 
 
 def split_by_special_tokens(text: str, special_tokens: List[str]) -> List[str]:
@@ -82,25 +104,27 @@ def pretokenize(text: str, special_tokens: List[str], drop_special_token: bool=T
     parts = split_by_special_tokens(text, special_tokens)
 
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    tokens_list = []
+    word_counter = Counter()    # Count the frequency of each word
 
     for part in parts:
         if part in special_tokens:
             if not drop_special_token:  # keep special tokens, otherwise ignore
-                tokens_list.append(part.encode('utf-8'))
+                token = tuple(word_to_bytes(part))
+                word_counter[part] += 1
         else:
             matches = re.finditer(PAT, part)
             for match in matches:
-                token = match.group(0)
-                if token:
-                    tokens_list.append(token.encode('utf-8'))
+                word = match.group(0)
+                token = tuple(word_to_bytes(word))
+                word_counter[token] += 1
         
-    return tokens_list
+    return word_counter
 
 
 def pretokenize_chunk(args) -> List[bytes]:
     """
     Pretokenize a chunk of text into bytes, handling special tokens.
+    return world counter
     """
     input_path, special_tokens, start, end, drop_special_token = args
     print(f"Processing bytes from {start} to {end}...")
@@ -111,58 +135,33 @@ def pretokenize_chunk(args) -> List[bytes]:
     return pretokenize(chunk, special_tokens, drop_special_token=drop_special_token)
 
 
-def merge(counts: Dict[Tuple[int, int], int], 
-          index_dict: Dict[Tuple[int, int], Set[int]], 
-          pretokens: List[bytes], 
-          max_pair: Tuple[int, int], 
-          new_index: int) -> None:
+def merge_pair(
+    word_counter: Dict[Tuple[bytes], int], pair: Tuple[bytes, bytes]
+) -> Tuple[Dict[Tuple[bytes], int], Dict]:
     """
-    Merge the pairs with higest counts and update the counts and index_dict.
+    Merge a pair of bytes in the word counter.
     """
-    index_set = index_dict[max_pair]
+    new_word_counter = Counter()
+    updated_pair_counts = defaultdict(int)
 
-    for i in index_set:
-        pretoken = pretokens[i]
-        new_pretoken = []
-
-        pos_list = []   # store position of max_pair in each pretoken afte merging
-        pos = 0
-        
-
-        # Replace the max_pair in the pretoken with new_index
-        j = 0
-        while j < len(pretoken):
-            if j < len(pretoken) - 1 and (pretoken[j], pretoken[j + 1]) == max_pair:
-                new_pretoken.append(new_index)
-                pos_list.append(pos)
-                j += 2
-                pos += 1
+    for token, freq in word_counter.items():
+        new_token = []
+        i = 0
+        while i < len(token):
+            if i < len(token) - 1 and (token[i], token[i + 1]) == pair:
+                new_token.append(token[i] + token[i + 1])
+                i += 2
             else:
-                new_pretoken.append(pretoken[j])
-                j += 1
-                pos += 1
-        
-        # Update the counts and index_dict
-        for pos in pos_list:
-            counts[max_pair] -= 1
+                new_token.append(token[i])
+                i += 1
 
-            if pos > 0:
-                if new_pretoken[pos - 1] == new_index:
-                    counts[(max_pair[1], max_pair[0])] -= 1
-                else:
-                    counts[(new_pretoken[pos - 1], max_pair[0])] -= 1
-                counts[(new_pretoken[pos - 1], new_index)] += 1
-                index_dict[(new_pretoken[pos - 1], new_index)].add(i)
-            
-            if pos < len(new_pretoken) - 1:
-                if new_pretoken[pos + 1] == new_index:
-                    counts[(max_pair[1], max_pair[0])] -= 1
-                else:
-                    counts[(max_pair[1], new_pretoken[pos + 1])] -= 1
-                counts[(new_index, new_pretoken[pos + 1])] += 1
-                index_dict[(new_index, new_pretoken[pos + 1])].add(i)
-        
-        pretokens[i] = new_pretoken
+        new_word_counter[tuple(new_token)] += freq
+
+        for j in range(len(new_token) - 1):
+            new_pair = (new_token[j], new_token[j + 1])
+            updated_pair_counts[new_pair] += freq
+
+    return new_word_counter, updated_pair_counts
 
 
 def train_bpe(
@@ -180,13 +179,11 @@ def train_bpe(
         Tuple[Dict[int, bytes], List[Tuple[bytes, bytes]]]: A tuple containing the vocabulary mapping and the list of merges.
     """
     
-    # Initialize the vocab
-    vocab = {i: bytes([i]) for i in range(256)}
-    for special_token in special_tokens:
-        vocab[len(vocab)] = special_token.encode('utf-8')
-
-    merges = []
-    number_merges = vocab_size - len(vocab)
+    special_tokens_bytes = check_and_convert_special_tokens(special_tokens)
+    
+    vocab = initialize_vocab(special_tokens_bytes)
+    vocab_inv = {v: k for k, v in vocab.items()}
+    merges: List[Tuple[bytes, bytes]] = []
 
     # Chunk the text file
     num_processes = 4
@@ -199,35 +196,27 @@ def train_bpe(
         chunk_list.append((input_path, special_tokens, start, end, True))
     
     # Pretokenze the chunks with multiple processes
-    pretokens_list = []
+    word_counter = Counter()
     with multiprocessing.Pool(num_processes) as pool:
-        pretokens_list = pool.map(pretokenize_chunk, chunk_list)
-    pretokens = [item for sublist in pretokens_list for item in sublist]
+        word_counter_list = pool.map(pretokenize_chunk, chunk_list)
+    # Combine the counters from all processes
+    for counter in word_counter_list:
+        word_counter.update(counter)
 
     # Merging
-    counts = defaultdict(int)   # Store the counts of each pair
-    index_dict = defaultdict(set)  # Store pretoken location for each pair
-    for j, pretoken in enumerate(pretokens):
-        for index1, index2 in zip(pretoken, pretoken[1:]):
-            counts[index1, index2] += 1
-            index_dict[index1, index2].add(j)
+    pairs_freqs = pair_counts(word_counter)
     
-    for _ in range(number_merges):
-        # Prefer lexicographically lager pairs
-        max_pair = max(
-            counts.items(),
-            key=lambda x: (
-                x[1],
-                vocab[x[0][0]].decode("utf-8", errors="ignore"),
-                vocab[x[0][1]].decode("utf-8", errors="ignore")
-            ),
-        )[0]
-        index1, index2 = max_pair
-        new_index = len(vocab)
-        vocab[new_index] = vocab[index1] + vocab[index2]
-        merges.append((vocab[index1], vocab[index2]))
+    num_merges = vocab_size - len(vocab)
+    
+    for _ in trange(num_merges):
+        
+        most_common_pair = get_most_frequent_pair(pairs_freqs)
+        
+        new_index = add_pair_to_vocab(vocab, most_common_pair, vocab_inv)
 
-        merge(counts, index_dict, pretokens, max_pair, new_index)
+        merges.append(most_common_pair)
+
+        word_counter, pairs_freqs = merge_pair(word_counter, most_common_pair)
 
     return vocab, merges
 
@@ -254,7 +243,7 @@ class BPETokenizer:
         Encode the input text into a sequence of token IDs.
         """
         vocab_reversed = {v: k for k, v in self.vocab.items()}  # bytes: int
-        pretoken_bytes = pretokenize(text, self.special_tokens, drop_special_token=False)
+        word_counter = pretokenize(text, self.special_tokens, drop_special_token=False)
         special_token_bytes = [token.encode('utf-8') for token in self.special_tokens]
         pretokens = [] # List[List[int]]
 

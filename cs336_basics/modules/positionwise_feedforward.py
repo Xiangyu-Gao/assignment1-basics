@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from cs336_basics.linear import Linear
+from cs336_basics.modules.linear import Linear
 
 
 def silu(x):

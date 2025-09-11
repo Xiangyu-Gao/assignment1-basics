@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from einops import einsum
-from cs336_basics.softmax import softmax
+from cs336_basics.modules.softmax import softmax
 
 
 def scaled_dot_product_attention(Q, K, V, mask=None):

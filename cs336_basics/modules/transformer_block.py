@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from cs336_basics.multihead_self_attention import MultiHeadAttention
-from cs336_basics.rmsnorm import RMSNorm
-from cs336_basics.positionwise_feedforward import PositionwiseFeedForward
+from cs336_basics.modules.multihead_self_attention import MultiHeadAttention
+from cs336_basics.modules.rmsnorm import RMSNorm
+from cs336_basics.modules.positionwise_feedforward import PositionwiseFeedForward
 
 
 class TransformerBlock(nn.Module):

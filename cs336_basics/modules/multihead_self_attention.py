@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
-from cs336_basics.rope import RoPE
-from cs336_basics.linear import Linear
+from cs336_basics.modules.scaled_dot_product_attention import scaled_dot_product_attention
+from cs336_basics.modules.rope import RoPE
+from cs336_basics.modules.linear import Linear
 
 
 class MultiHeadAttention(nn.Module):

@@ -9,23 +9,23 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 
-from cs336_basics.BPETokenizer import train_bpe, BPETokenizer
-from cs336_basics.linear import Linear
-from cs336_basics.embedding import Embedding
-from cs336_basics.rmsnorm import RMSNorm
-from cs336_basics.positionwise_feedforward import PositionwiseFeedForward
-from cs336_basics.softmax import softmax
-from cs336_basics.rope import RoPE
-from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
-from cs336_basics.multihead_self_attention import MultiHeadAttention
-from cs336_basics.transformer_block import TransformerBlock
+from cs336_basics.tokenizer.BPETokenizer import train_bpe, BPETokenizer
+from cs336_basics.modules.linear import Linear
+from cs336_basics.modules.embedding import Embedding
+from cs336_basics.modules.rmsnorm import RMSNorm
+from cs336_basics.modules.positionwise_feedforward import PositionwiseFeedForward, silu
+from cs336_basics.modules.softmax import softmax
+from cs336_basics.modules.rope import RoPE
+from cs336_basics.modules.scaled_dot_product_attention import scaled_dot_product_attention
+from cs336_basics.modules.multihead_self_attention import MultiHeadAttention
+from cs336_basics.modules.transformer_block import TransformerBlock
 from cs336_basics.transformer_lm import TransformerLM
-from cs336_basics.cross_entropy import cross_entropy_loss
-from cs336_basics.adamw import AdamW
-from cs336_basics.learning_rate_schedule import lr_cosine_schedule
-from cs336_basics.gradient_clipping import gradient_clipping
+from cs336_basics.modules.cross_entropy import cross_entropy_loss
+from cs336_basics.modules.adamw import AdamW
+from cs336_basics.modules.learning_rate_schedule import lr_cosine_schedule
+from cs336_basics.modules.gradient_clipping import gradient_clipping
 from cs336_basics.data_loading import data_loading
-from cs336_basics.checkpointing import save_checkpoint, load_checkpoint
+from cs336_basics.modules.checkpointing import save_checkpoint, load_checkpoint
 
 
 def run_linear(
@@ -501,7 +501,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return silu(in_features)
 
 
 def run_get_batch(

@@ -6,11 +6,11 @@ import torch.nn as nn
 import numpy as np
 
 from cs336_basics.transformer_lm import TransformerLM
-from cs336_basics.adamw import AdamWs
-from cs336_basics.data_loading import data_loading
-from cs336_basics.checkpointing import save_checkpoint, load_checkpoint
-from cs336_basics.cross_entropy import cross_entropy_loss
-from cs336_basics.learning_rate_schedules import lr_cosine_schedule
+from cs336_basics.modules.adamw import AdamWs
+from cs336_basics.modules.data_loading import data_loading
+from cs336_basics.modules.checkpointing import save_checkpoint, load_checkpoint
+from cs336_basics.modules.cross_entropy import cross_entropy_loss
+from cs336_basics.modules.learning_rate_schedules import lr_cosine_schedule
 
 
 def get_args():

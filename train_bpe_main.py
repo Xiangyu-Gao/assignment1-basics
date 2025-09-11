@@ -2,7 +2,7 @@ import time
 import pickle
 import cProfile
 
-from cs336_basics.BPETokenizer import train_bpe
+from cs336_basics.tokenizer.BPETokenizer import train_bpe
 
 
 def main():
@@ -30,14 +30,14 @@ def main():
 
     print(f"Time taken: {end_time - start_time:.2f} seconds")
 
-    print(f"The whole vocab set is: {vocab}")
+    # print(f"The whole vocab set is: {vocab}")
 
     print(f"The longest vocab is: {max(vocab.values(), key=len)}")
 
 
 if __name__ == "__main__":
-    # main()
-    cProfile.run("main()", sort="cumulative")
+    main()
+    # cProfile.run("main()", sort="cumulative")
 
     
 
