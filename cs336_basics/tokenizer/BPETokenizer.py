@@ -9,6 +9,9 @@ from tqdm import trange
 from cs336_basics.tokenizer.utils import find_chunk_boundaries
 
 
+PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
+
 def check_and_convert_special_tokens(
     special_tokens: List[str] | List[bytes],
 ) -> List[bytes]:
@@ -110,7 +113,7 @@ def pretokenize(text: str, special_tokens: List[str], drop_special_token: bool=T
         if part in special_tokens:
             if not drop_special_token:  # keep special tokens, otherwise ignore
                 token = tuple(word_to_bytes(part))
-                word_counter[part] += 1
+                word_counter[token] += 1
         else:
             matches = re.finditer(PAT, part)
             for match in matches:
@@ -225,12 +228,31 @@ class BPETokenizer:
     """
     A class to handle Byte Pair Encoding (BPE) tokenization.
     """
+
+    PAT = PAT
     
     def __init__(self, vocab: Dict[int, bytes], merges: List[Tuple[bytes, bytes]], special_tokens: List[str] | None = None):
         self.vocab = vocab
         self.merges = merges
+        self.vocab_inv = {v: k for k, v in vocab.items()}  # bytes: int
         self.special_tokens = special_tokens if special_tokens is not None else []
-    
+
+    def _pre_tokenize(self, text: str) -> List[bytes]:
+        """
+        Pretokenize the text into bytes, handling special tokens.
+        """
+        parts = split_by_special_tokens(text, self.special_tokens)
+        token_list = []
+
+        for part in parts:
+            if part in self.special_tokens:
+                # keep special tokens, otherwise ignore
+                token_list.append(part.encode("utf-8"))
+            else:
+                tokens = re.findall(PAT, part)
+                token_list.extend(word_to_bytes(token) for token in tokens)
+        return token_list
+
     @classmethod
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: List[str] | None = None) -> "BPETokenizer":
         """
@@ -242,41 +264,38 @@ class BPETokenizer:
         """
         Encode the input text into a sequence of token IDs.
         """
-        vocab_reversed = {v: k for k, v in self.vocab.items()}  # bytes: int
-        word_counter = pretokenize(text, self.special_tokens, drop_special_token=False)
+        pretoken_bytes = self._pre_tokenize(text) # List[bytes]
         special_token_bytes = [token.encode('utf-8') for token in self.special_tokens]
-        pretokens = [] # List[List[int]]
+        token_ids = [] # List[int]
 
-        # Convert pretokens from bytes to List[int] by vocab
-        for pretoken in pretoken_bytes:
-            new_pretoken = []
-            if pretoken in special_token_bytes:
-                new_pretoken.append(vocab_reversed[pretoken])
+        # Convert pretokens from bytes to List[int] by vocab_inv
+        for pretoken_byte in pretoken_bytes:
+            if pretoken_byte in special_token_bytes:
+                token_ids.append([self.vocab_inv[pretoken_byte]])
             else:
-                for b in pretoken:
-                    index = vocab_reversed[bytes([b])]
-                    new_pretoken.append(index)
-            
-            pretokens.append(new_pretoken)
+                token_ids.append([self.vocab_inv[b] for b in pretoken_byte])
 
-        # Apply merges
-        for i, pretoken in enumerate(pretokens):
+        # Apply merges to token_ids
+        for i, pretoken in enumerate(token_ids):
             for merge in self.merges:
-                new_index = vocab_reversed[merge[0] + merge[1]]
-                new_pretoken = []
+                new_index = self.vocab_inv.get(merge[0] + merge[1], None)
+                if new_index is None:
+                    continue    # skip if the merged token is not in vocab
+
+                merged = []
                 j = 0
                 while j < len(pretoken):
                     if j < len(pretoken) - 1 and (self.vocab[pretoken[j]], self.vocab[pretoken[j + 1]]) == merge:
-                        new_pretoken.append(new_index)
+                        merged.append(new_index)
                         j += 2
                     else:
-                        new_pretoken.append(pretoken[j])
+                        merged.append(pretoken[j])
                         j += 1
-                pretoken = new_pretoken # update pretoken with merged result
+                pretoken = merged # update pretoken with merged result
             
-            pretokens[i] = pretoken # update pretokens with final merged result
+            token_ids[i] = pretoken[:] # update pretokens with final merged result
         
-        tokens = [token for pretoken in pretokens for token in pretoken]
+        tokens = [j for pretoken in token_ids for j in pretoken]    # flatten the list of lists
         
         return tokens
         
