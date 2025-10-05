@@ -230,7 +230,7 @@ class BPETokenizer:
     """
 
     PAT = PAT
-    
+
     def __init__(self, vocab: Dict[int, bytes], merges: List[Tuple[bytes, bytes]], special_tokens: List[str] | None = None):
         self.vocab = vocab
         self.merges = merges
@@ -242,7 +242,7 @@ class BPETokenizer:
         Pretokenize the text into bytes, handling special tokens.
         """
         parts = split_by_special_tokens(text, self.special_tokens)
-        token_list = []
+        token_list = [] # List[bytes]
 
         for part in parts:
             if part in self.special_tokens:
@@ -262,47 +262,65 @@ class BPETokenizer:
     
     def encode(self, text: str) -> List[int]:
         """
-        Encode the input text into a sequence of token IDs.
+        Encode the input text into a sequence of token IDs using greedy strategy.
         """
-        pretoken_bytes = self._pre_tokenize(text) # List[bytes]
-        special_token_bytes = [token.encode('utf-8') for token in self.special_tokens]
-        token_ids = [] # List[int]
+        pretoken_bytes = self._pre_tokenize(text)
+        token_ids = []
 
-        # Convert pretokens from bytes to List[int] by vocab_inv
+        # Pre-compute a mapping from a merge tuple to its new token ID.
+        # This avoids repeated lookups and comparisons.
+        merges_map = {
+            (self.vocab_inv[pair[0]], self.vocab_inv[pair[1]]): self.vocab_inv.get(pair[0] + pair[1])
+            for pair in self.merges
+        }
+
         for pretoken_byte in pretoken_bytes:
-            if pretoken_byte in special_token_bytes:
-                token_ids.append([self.vocab_inv[pretoken_byte]])
-            else:
-                token_ids.append([self.vocab_inv[b] for b in pretoken_byte])
-
-        # Apply merges to token_ids
-        for i, pretoken in enumerate(token_ids):
-            for merge in self.merges:
-                new_index = self.vocab_inv.get(merge[0] + merge[1], None)
-                if new_index is None:
-                    continue    # skip if the merged token is not in vocab
-
-                merged = []
-                j = 0
-                while j < len(pretoken):
-                    if j < len(pretoken) - 1 and (self.vocab[pretoken[j]], self.vocab[pretoken[j + 1]]) == merge:
-                        merged.append(new_index)
-                        j += 2
-                    else:
-                        merged.append(pretoken[j])
-                        j += 1
-                pretoken = merged # update pretoken with merged result
+            if pretoken_byte in [token.encode('utf-8') for token in self.special_tokens]:
+                token_ids.append(self.vocab_inv[pretoken_byte])
+                continue
             
-            token_ids[i] = pretoken[:] # update pretokens with final merged result
+            # Convert pre-token bytes to a list of initial token IDs.
+            current_ids = [self.vocab_inv[b] for b in pretoken_byte]
+            
+            # Apply merges iteratively until no more merges are possible.
+            while True:
+                # Find the first mergeable pair based on the priority defined in self.merges.
+                # This is a key optimization: we don't iterate through all merges.
+                best_pair_index = -1
+                best_pair = None
+                
+                for i in range(len(current_ids) - 1):
+                    pair = (current_ids[i], current_ids[i+1])
+                    
+                    # Check if this pair is a valid merge and find its priority.
+                    merge_bytes = (self.vocab[pair[0]], self.vocab[pair[1]])
+                    try:
+                        merge_index = self.merges.index(merge_bytes)
+                    except ValueError:
+                        continue # Not a valid merge
+
+                    if best_pair_index == -1 or merge_index < best_pair_index:
+                        best_pair_index = merge_index
+                        best_pair = i
+
+                if best_pair is None:
+                    break # No more merges to be done on this pre-token
+
+                # Perform the merge at the found position.
+                i = best_pair
+                new_id = merges_map[(current_ids[i], current_ids[i+1])]
+                
+                # Reconstruct the list with the merged token.
+                current_ids = current_ids[:i] + [new_id] + current_ids[i+2:]
+            
+            token_ids.extend(current_ids)
         
-        tokens = [j for pretoken in token_ids for j in pretoken]    # flatten the list of lists
-        
-        return tokens
+        return token_ids
         
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         """
-        Given an iterable of strings (e.g., a Python file handle), return a generator that lazily yields token IDs. 
-        This is required for memory-eﬀicient tokenization of large files that we cannot directly load into memory.
+        Encode lines of text from an iterable using buffered batching.
+        This version preserves newlines by assuming the input was split with `splitlines(keepends=True)`.
         """
         for text in iterable:
             yield from self.encode(text)

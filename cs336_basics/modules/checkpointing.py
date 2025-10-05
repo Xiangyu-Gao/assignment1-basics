@@ -27,6 +27,8 @@ def save_checkpoint(
     # gather iteration
     all_params["iteration"] = iteration
 
+    # make the dir if it is not exist
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     # save to disk
     torch.save(all_params, out)
 

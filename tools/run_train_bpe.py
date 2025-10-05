@@ -15,18 +15,27 @@ def main():
     # calculate the time and memory taken to run the BPE training
     start_time = time.time()
 
+    special_tokens = ["<|endoftext|>"]
+
     # Run the BPE training
     print("Starting BPE training...")
     vocab, merges = train_bpe(
         input_path=input_path,
         vocab_size=10000,
-        special_tokens=["<|endoftext|>"],
+        special_tokens=special_tokens,
     )
     end_time = time.time()
     
     # Dump the vocabulary and merges to files
     with open(output_file_name, "wb") as vocab_file:
-        pickle.dump({"vocab": vocab, "merges": merges}, vocab_file)
+        pickle.dump(
+            {
+                "vocab": vocab,
+                "merges": merges,
+                "special_tokens": special_tokens,
+            },
+            vocab_file
+        )
 
     print(f"Time taken: {end_time - start_time:.2f} seconds")
 

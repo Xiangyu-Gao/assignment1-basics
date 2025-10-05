@@ -19,12 +19,12 @@ from cs336_basics.modules.rope import RoPE
 from cs336_basics.modules.scaled_dot_product_attention import scaled_dot_product_attention
 from cs336_basics.modules.multihead_self_attention import MultiHeadAttention
 from cs336_basics.modules.transformer_block import TransformerBlock
-from cs336_basics.transformer_lm import TransformerLM
+from cs336_basics.modules.transformer_lm import TransformerLM
 from cs336_basics.modules.cross_entropy import cross_entropy_loss
 from cs336_basics.modules.adamw import AdamW
 from cs336_basics.modules.learning_rate_schedule import lr_cosine_schedule
 from cs336_basics.modules.gradient_clipping import gradient_clipping
-from cs336_basics.data_loading import data_loading
+from cs336_basics.modules.data_loading import data_loading
 from cs336_basics.modules.checkpointing import save_checkpoint, load_checkpoint
 
 
